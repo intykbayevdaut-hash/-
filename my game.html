@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ECHO: Netrunners — Terminal</title>
+<style>
+:root{color-scheme:dark;--bg:#05060a;--fg:#39ff88;--acc:#ff2bd6;--dim:#2a7a52;--err:#ff4466;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{height:100%;margin:0;background:var(--bg)}
+body{font:15px/1.5 "Courier New",ui-monospace,monospace;color:var(--fg);display:flex;flex-direction:column;
+background:radial-gradient(ellipse at top,#0d1a14 0,var(--bg) 70%)}
+header{padding:10px 14px;border-bottom:1px solid var(--dim);display:flex;justify-content:space-between;color:var(--acc);text-shadow:0 0 8px var(--acc);font-size:13px}
+#out{flex:1;overflow-y:auto;padding:12px 14px;text-shadow:0 0 6px currentColor;white-space:pre-wrap;word-break:break-word}
+#out .err{color:var(--err)}#out .acc{color:var(--acc)}#out .dim{color:var(--dim)}
+form{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--dim)}
+form span{color:var(--acc);white-space:nowrap}
+input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--fg);font:inherit;caret-color:var(--acc);text-shadow:0 0 6px currentColor}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0 1px,transparent 1px 3px)}
+</style>
+</head>
+<body>
+<header><span>ECHO: NETRUNNERS // v0.1</span><span id="xp">XP: 0</span></header>
+<div id="out"></div>
+<form id="f"><span>netrunner@echo:~$</span><input id="in" autocomplete="off" autocapitalize="off" spellcheck="false" autofocus></form>
+<script>
+const out=document.getElementById('out'),inp=document.getElementById('in'),xpEl=document.getElementById('xp');
+const FS={
+'readme.txt':'Добро пожаловать в ECHO. Ты — скрипт-кидди из трущоб Нижнего Города.\nКоманды: help. Начни с mission.txt.',
+'mission.txt':'МИССИЯ 1: УПРАВЛЕНИЕ ДРОНОМ\nДрон стартует в (0,0). Чип данных лежит в (3,2).\nAPI: drone.move("right"|"left"|"up"|"down", шаги), drone.grab()\nПример: run drone.move("right",3); drone.move("down",2); drone.grab()\nПодсказка: набери hint',
+'.hidden_key':'KEY{ls_-a_reveals_hidden_files}'};
+let xp=0,done=false,hist=[],hi=0;
+const hints=['Шаги можно писать через ;','Цикл: for(let i=0;i<3;i++){drone.move("right")}','Нужно 3 шага вправо, 2 вниз, затем grab()'];let hn=0;
+function print(t,c=''){const d=document.createElement('div');d.className=c;d.textContent=t;out.appendChild(d);out.scrollTop=out.scrollHeight}
+function addXp(n){xp+=n;xpEl.textContent='XP: '+xp}
+function sandbox(code){const log=[];const drone={move:(d,n=1)=>log.push(['move',String(d),+n]),grab:()=>log.push(['grab'])};
+try{new Function('drone','print',code)(drone,m=>log.push(['print',String(m)]));return{log}}catch(e){return{err:e.message}}}
+function runCode(code){return new Promise(res=>{let w;
+try{w=new Worker(URL.createObjectURL(new Blob(['const sandbox='+sandbox.toString()+';onmessage=e=>postMessage(sandbox(e.data))'])))}catch(_){return res(sandbox(code))}
+const t=setTimeout(()=>{w.terminate();res({err:'Таймаут: возможно, бесконечный цикл'})},1000);
+w.onmessage=e=>{clearTimeout(t);w.terminate();res(e.data)};
+w.onerror=()=>{clearTimeout(t);w.terminate();res(sandbox(code))};w.postMessage(code)})}
+const D={right:[1,0],left:[-1,0],down:[0,1],up:[0,-1]};
+const CMD={
+help:()=>print('help | ls [-a] | cat <файл> | whoami | scan | mission | hint | run <js-код> | theme <green|pink|cyan> | clear','dim'),
+whoami:()=>print('script_kiddie (ранг 1) — XP '+xp),
+ls:a=>print(Object.keys(FS).filter(f=>a==='-a'||!f.startsWith('.')).join('  ')),
+cat:a=>FS[a]!==undefined?(print(FS[a]),a==='.hidden_key'&&addXp(25)):print('cat: '+(a||'')+': нет такого файла','err'),
+scan:()=>print('Сканирование...\n192.168.0.1  :80   open  http\n192.168.0.7  :22   open  ssh\n192.168.0.9  :8080 closed\n(в следующих уровнях ты научишься читать такое сам)','acc'),
+mission:()=>print(FS['mission.txt']),
+hint:()=>{print(hints[Math.min(hn++,hints.length-1)],'acc')},
+clear:()=>{out.textContent=''},
+theme:a=>{const m={green:['#39ff88','#2a7a52'],pink:['#ff5bd9','#7a2a69'],cyan:['#3df0ff','#2a6f7a']}[a];
+if(!m)return print('theme: green | pink | cyan','err');document.documentElement.style.setProperty('--fg',m[0]);document.documentElement.style.setProperty('--dim',m[1])},
+run:async code=>{if(!code)return print('run: укажи код, напр. run drone.move("right",3)','err');
+const r=await runCode(code);if(r.err)return print('Ошибка: '+r.err,'err');
+let x=0,y=0,got=false;
+for(const l of r.log){if(l[0]==='move'){const d=D[l[1]];if(!d)return print('Неизвестное направление: '+l[1],'err');x+=d[0]*l[2];y+=d[1]*l[2];print('drone → ('+x+','+y+')','dim')}
+else if(l[0]==='grab'){print(x===3&&y===2?'Чип данных захвачен!':'Здесь пусто — grab() в ('+x+','+y+')',x===3&&y===2?'acc':'err');got=got||(x===3&&y===2)}
+else print(l[1])}
+if(got&&!done){done=true;addXp(100);print('МИССИЯ 1 ВЫПОЛНЕНА  +100 XP\nСледующий уровень: сети и HTTP (скоро)','acc')}
+else if(!got)print('Дрон остановился в ('+x+','+y+'). Попробуй ещё раз.')}
+};
+document.getElementById('f').addEventListener('submit',e=>{e.preventDefault();const v=inp.value.trim();inp.value='';if(!v)return;
+hist.push(v);hi=hist.length;print('netrunner@echo:~$ '+v,'dim');
+const i=v.indexOf(' '),c=i<0?v:v.slice(0,i),a=i<0?'':v.slice(i+1).trim();
+CMD[c]?CMD[c](a):print(c+': команда не найдена. Набери help','err')});
+inp.addEventListener('keydown',e=>{if(e.key==='ArrowUp'&&hist.length){hi=Math.max(0,hi-1);inp.value=hist[hi];e.preventDefault()}
+if(e.key==='ArrowDown'&&hist.length){hi=Math.min(hist.length,hi+1);inp.value=hist[hi]||'';e.preventDefault()}});
+document.addEventListener('click',()=>inp.focus());
+[['> ECHO NETRUNNERS // boot sequence','acc'],['> mounting /dev/slums ... OK','dim'],['> uplink established','dim'],['','' ],['Набери help, чтобы начать. Первая цель: mission.txt','']].forEach((l,i)=>setTimeout(()=>print(l[0],l[1]),i*350));
+</script>
+</body>
+</html>
